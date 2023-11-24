@@ -15,7 +15,7 @@ from pptx.slide import Slide
 from string import Template
 import subprocess
 import tempfile
-from typing import TypeGuard
+from typing import Any, TypeGuard
 
 def get_note_from_slide(slide: Slide) -> str | None:
     if not slide.has_notes_slide:
@@ -209,7 +209,7 @@ async def main_process(ppt_file_path: Path,
 
         return result
 
-async def convert(args) -> Path:
+async def convert(args: argparse.Namespace) -> Path:
     result = await main_process(ppt_file_path=args.infile,
                         output_file_path=args.outfile,
                         soffice_file_path=args.soffice_file_path,
@@ -219,7 +219,7 @@ async def convert(args) -> Path:
                         encoding=args.encoding)
     return result
 
-def pretty_format(obj, depth=0) -> str:
+def pretty_format(obj: dict[Any, Any] | list[Any] | str, depth: int = 0) -> str:
     result = list()
 
     if isinstance(obj, dict):
@@ -242,7 +242,7 @@ def pretty_format(obj, depth=0) -> str:
 
     return '\n'.join(result)
 
-async def list_voices(args) -> None:
+async def list_voices(args: argparse.Namespace) -> None:
     params = dict()
 
     if args.language != 'all':
