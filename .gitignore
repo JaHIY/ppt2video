@@ -1,3 +1,7 @@
 ppt2video/__pycache__
+.mypy_cache/
 *.pptx
 *.ppt
+*.png
+*.aac
+*.mp4

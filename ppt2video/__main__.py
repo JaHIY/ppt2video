@@ -274,7 +274,7 @@ def parse_args() -> argparse.Namespace:
     parser_convert.add_argument('outfile', type=Path, help='set output video filename')
     parser_convert.add_argument('--soffice-file-path', type=Path, default=Path('/usr/bin/soffice'))
     parser_convert.add_argument('--ffmpeg-file-path', type=Path, default=Path('/usr/bin/ffmpeg'))
-    parser_convert.add_argument('--dpi', type=int, default=300)
+    parser_convert.add_argument('--dpi', type=int, default=75)
     parser_convert.add_argument('--voice', type=str, default='zh-CN-XiaoxiaoNeural')
     parser_convert.add_argument('--encoding', type=str, default=locale.getpreferredencoding())
     parser_convert.set_defaults(func=convert)
