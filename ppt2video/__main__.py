@@ -2,13 +2,15 @@
 
 import argparse
 import asyncio
+from asyncio import Task, TaskGroup
 import edge_tts
-import fitz
+from edge_tts.typing import VoicesManagerFind
+import pymupdf
 from functools import partial
 from itertools import count
 import locale
 from loguru import logger
-from operator import is_not, itemgetter
+from operator import itemgetter
 from pathlib import Path
 from pptx import Presentation
 from pptx.slide import Slide
@@ -20,6 +22,9 @@ from typing import Any, TypeGuard
 def get_note_from_slide(slide: Slide) -> str | None:
     if not slide.has_notes_slide:
         return None
+    
+    if not slide.notes_slide.notes_text_frame:
+        return None
 
     notes_text: str = slide.notes_slide.notes_text_frame.text
     if len(notes_text) == 0:
@@ -28,15 +33,15 @@ def get_note_from_slide(slide: Slide) -> str | None:
     return notes_text
 
 def get_notes_from_ppt_file(ppt_file_path: Path) -> list[str | None]:
-    prs = Presentation(ppt_file_path)
+    prs = Presentation(str(ppt_file_path))
     notes = list(map(get_note_from_slide, prs.slides))
     return notes
 
-async def convert_page_to_image(page: fitz.Page,
+async def convert_page_to_image(page: pymupdf.Page,
                           output_file_path: Path,
                           dpi: int) -> Path:
     loop = asyncio.get_running_loop()
-    pix = await loop.run_in_executor(None, partial(page.get_pixmap, dpi=dpi))
+    pix: pymupdf.Pixmap = await loop.run_in_executor(None, partial(page.get_pixmap, dpi=dpi))
     loop.run_in_executor(None, pix.save, output_file_path)
     logger.info('Generate Image file from PDF in `{output_file_path}`', output_file_path=output_file_path)
 
@@ -66,10 +71,10 @@ async def convert_ppt_to_image(ppt_file_path: Path,
         pdf_file_path = tmp_dir_path / f'{ppt_file_path.stem}.pdf'
         logger.info('Generate PDF from PPTX in `{pdf_file_path}`', pdf_file_path=pdf_file_path)
 
-        tasks = list()
-        with fitz.open(pdf_file_path) as pdf:
-            async with asyncio.TaskGroup() as tg:
-                for index, page in enumerate(pdf, start=1):
+        tasks: list[Task[Path]] = list()
+        with pymupdf.open(pdf_file_path) as pdf:
+            async with TaskGroup() as tg:
+                for index, page in enumerate(iter(pdf), start=1):
                     if (pages is not None) and (index not in pages):
                         continue
 
@@ -82,7 +87,7 @@ async def convert_note_to_audio(note: str,
                           output_file_path: Path,
                           voice: str) -> Path:
     communicate = edge_tts.Communicate(note, voice)
-    await communicate.save(output_file_path)
+    await communicate.save(str(output_file_path))
     logger.info('Generate Audio file from note in `{output_file_path}`', output_file_path=output_file_path)
 
     return output_file_path
@@ -91,8 +96,8 @@ async def convert_notes_to_audio(notes: list[str],
                                  output_dir: Path,
                                  output_filename: Template,
                                  voice: str) -> list[Path]:
-    tasks = list()
-    async with asyncio.TaskGroup() as tg:
+    tasks: list[Task[Path]] = list()
+    async with TaskGroup() as tg:
         for index, note in enumerate(notes, start=1):
             output_file_path = output_dir / output_filename.substitute(index=index)
             tasks.append(tg.create_task(convert_note_to_audio(note, output_file_path, voice)))
@@ -104,7 +109,7 @@ def convert_video(image_file_path: Path,
                   output_file_path: Path,
                   ffmpeg_file_path: Path,
                   encoding: str) -> Path:
-    output = subprocess.run([ffmpeg_file_path,
+    _output = subprocess.run([ffmpeg_file_path,
                              '-loop', '1',
                              '-i', image_file_path,
                              '-i', audio_file_path,
@@ -124,7 +129,7 @@ def convert_videos(image_file_paths: list[Path],
                   output_filename: Template,
                   ffmpeg_file_path: Path,
                   encoding: str) -> list[Path]:
-    result = list()
+    result: list[Path] = list()
 
     for index, image_file_path, audio_file_path in zip(count(1), image_file_paths, audio_file_paths):
         output_file_path = output_dir / output_filename.substitute(index=index)
@@ -143,7 +148,7 @@ def concat_videos(video_file_paths: list[Path],
         with concat_file_path.open(mode='w') as f:
             for p in video_file_paths:
                 f.write(f"file '{p.resolve()}'\n")
-        output = subprocess.run([ffmpeg_file_path,
+        _output = subprocess.run([ffmpeg_file_path,
                                  '-f', 'concat',
                                  '-safe', '0',
                                  '-i', concat_file_path,
@@ -158,7 +163,7 @@ def concat_videos(video_file_paths: list[Path],
         return output_file_path
 
 def has_note(t: tuple[int, str | None]) -> TypeGuard[tuple[int, str]]:
-    index, note = t
+    _index, note = t
     return (note is not None) and (len(note) > 0)
 
 async def main_process(ppt_file_path: Path,
@@ -220,7 +225,7 @@ async def convert(args: argparse.Namespace) -> Path:
     return result
 
 def pretty_format(obj: dict[Any, Any] | list[Any] | str, depth: int = 0) -> str:
-    result = list()
+    result: list[str] = list()
 
     if isinstance(obj, dict):
         for k, v in obj.items():
@@ -243,7 +248,7 @@ def pretty_format(obj: dict[Any, Any] | list[Any] | str, depth: int = 0) -> str:
     return '\n'.join(result)
 
 async def list_voices(args: argparse.Namespace) -> None:
-    params = dict()
+    params: VoicesManagerFind = {}
 
     if args.language != 'all':
         params['Language'] = args.language
@@ -258,7 +263,7 @@ async def list_voices(args: argparse.Namespace) -> None:
     voices = voices_manager.find(**params)
     voices.sort(key=itemgetter('ShortName'))
 
-    if args.detail == False:
+    if not args.detail:
         for name in map(itemgetter('ShortName'), voices):
             print(name)
         return
